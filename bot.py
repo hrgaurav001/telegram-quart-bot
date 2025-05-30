@@ -1,74 +1,50 @@
-from quart import Quart, request
+import os
 import redis
-from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
 import asyncio
+from quart import Quart, request
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
+# Environment variables se token aur redis url le rahe hain
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+REDIS_URL = os.getenv("REDIS_URL")
+
+# Redis client initialize karo
+redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+
+# Quart app create karo
 quart_app = Quart(__name__)
 
-# --- ENVIRONMENT VALUES (Yahan apne token aur redis url bharna) ---
-BOT_TOKEN = "7343823130:AAFE4FbY_BZGb4Jdx_FsITLKDi8zv09IEh8"
-REDIS_URL = "rediss://default:AaqBAAIjcDFlMTc1MzViMjczZWM0YjU1OTlmMmVjZGY3ZGNlODA2ZXAxMA@growing-squirrel-43649.upstash.io:6379"
+# Start command handler
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Hello! Main tumhara Telegram Quart bot hoon.")
 
-# --- REDIS CLIENT ---
-r = redis.from_url(REDIS_URL, decode_responses=True)
+# Echo handler - jo bhi message aata hai, wahi reply karta hai
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text_received = update.message.text
+    await update.message.reply_text(f"Aapne yeh likha: {text_received}")
 
-# --- TELEGRAM APPLICATION ---
-application = Application.builder().token(BOT_TOKEN).build()
-application_ready = False
+# Telegram bot setup function
+async def setup_bot():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), echo))
+    return app
 
-# --- CHANNEL POST HANDLER ---
-async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.channel_post:
-        channel_id = update.channel_post.chat_id
-        message_id = update.channel_post.message_id
-        timestamp = update.channel_post.date.timestamp()
-
-        last_timestamp = r.get("last_post_time")
-        if last_timestamp:
-            last_time = float(last_timestamp)
-            if timestamp - last_time <= 600:  # 10 minutes = 600 seconds
-                try:
-                    await context.bot.delete_message(chat_id=channel_id, message_id=message_id)
-                    print(f"Deleted message {message_id} in channel {channel_id}")
-                except Exception as e:
-                    print(f"Failed to delete message: {e}")
-
-        r.set("last_post_time", timestamp)
-
-# --- ADD HANDLER TO APPLICATION ---
-application.add_handler(MessageHandler(filters.ALL & filters.ChatType.CHANNEL, handle_channel_post))
-
-# --- INITIALIZE TELEGRAM APPLICATION ON STARTUP ---
-async def initialize_app():
-    global application_ready
-    if not application_ready:
-        await application.initialize()
-        application_ready = True
-
-# Initialize the application on startup
-asyncio.get_event_loop().run_until_complete(initialize_app())
-
-# --- WEBHOOK ROUTE ---
-@quart_app.route(f"/{BOT_TOKEN}", methods=["POST"])
+# Webhook route - Telegram se updates receive karne ke liye
+@quart_app.route('/webhook', methods=['POST'])
 async def webhook():
-    json_update = await request.get_json(force=True)
-    update = Update.de_json(json_update, application.bot)
-    await application.process_update(update)
-    return "ok", 200
+    data = await request.get_json(force=True)
+    app = await setup_bot()
+    update = Update.de_json(data, app.bot)
+    await app.update_queue.put(update)
+    return "OK"
 
-# --- HOME ROUTE ---
-@quart_app.route("/")
-async def home():
-    return "Bot is running!", 200
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     import hypercorn.asyncio
-    import asyncio
+    from hypercorn.config import Config
 
-    # Hypercorn config
-    config = hypercorn.Config()
+    config = Config()
     config.bind = ["0.0.0.0:10000"]
 
     asyncio.run(hypercorn.asyncio.serve(quart_app, config))
