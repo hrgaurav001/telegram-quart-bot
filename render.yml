@@ -1,10 +1,14 @@
 services:
   - type: web
-    name: telegram-bot
+    name: telegram-quart-bot
     env: python
-    buildCommand: ""
-    startCommand: hypercorn bot:quart_app --bind 0.0.0.0:10000
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "hypercorn bot:quart_app --bind 0.0.0.0:10000"
     plan: free
     envVars:
+      - key: BOT_TOKEN
+        value: "7343823130:AAGGiBiqvqlxpuhibxopBJoPiUdMCUlI2Ik"
+      - key: REDIS_URL
+        value: "rediss://default:AaqBAAIjcDFlMTc1MzViMjczZWM0YjU1OTlmMmVjZGY3ZGNlODA2ZXAxMA@growing-squirrel-43649.upstash.io:6379"
       - key: PYTHON_VERSION
-        value: 3.11
+        value: "3.11.0"
