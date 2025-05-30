@@ -2,4 +2,3 @@ quart==0.18.2
 python-telegram-bot==20.6
 redis==5.0.1
 hypercorn==0.14.2
-werkzeug==2.0.3
